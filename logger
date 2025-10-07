@@ -1,0 +1,39 @@
+import asyncio
+from bleak import BleakScanner
+import csv
+import time
+
+TARGET_MAC = "F2:B2:03:86:69:61"
+CSV_FILE = "/home/pi/govee_data.csv"
+
+def parse_data(data: bytes):
+    if len(data) >= 6:
+        temp_raw = (data[3] << 8) | data[4]
+        hum_raw = data[5]
+        temp_c = temp_raw / 256.0  # 例: 26°C程度
+        hum = hum_raw  # 例: 55%
+        return round(temp_c, 1), round(hum, 1)
+    return None, None
+
+async def main():
+    print("データ取得中... Ctrl+Cで停止")
+    with open(CSV_FILE, "a", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["timestamp", "temperature", "humidity"])
+
+    while True:
+        devices = await BleakScanner.discover(timeout=5.0)
+        for d in devices:
+            if d.address == TARGET_MAC:
+                data = d.metadata.get("manufacturer_data", {}).get(1)
+                if data:
+                    temp, hum = parse_data(data)
+                    if temp is not None:
+                        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                        print(f"{timestamp} | 温度: {temp}°C 湿度: {hum}%")
+                        with open(CSV_FILE, "a", newline="") as f:
+                            writer = csv.writer(f)
+                            writer.writerow([timestamp, temp, hum])
+        await asyncio.sleep(60)
+
+asyncio.run(main())
