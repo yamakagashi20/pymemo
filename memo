@@ -1,0 +1,43 @@
+import csv
+import datetime
+from bleak import BleakScanner
+import asyncio
+
+# 対象のMACアドレス
+TARGET_MAC = "F2:B2:03:86:69:61"
+
+# ログファイルの保存先（★ここで指定★）
+LOG_FILE = "/home/pi/govee_data.csv"  # Raspberry Pi の例
+# Windowsなら: LOG_FILE = "C:\\Users\\yourname\\Documents\\govee_data.csv"
+
+async def scan_sensor():
+    print(f"温湿度ロガー開始。保存先: {LOG_FILE}")
+
+    # CSVファイルのヘッダー作成（初回のみ）
+    with open(LOG_FILE, "a", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["時刻", "温度(℃)", "湿度(%)"])
+
+    while True:
+        devices = await BleakScanner.discover(timeout=5.0)
+        for d in devices:
+            if d.address == TARGET_MAC and 1 in d.metadata.get("manufacturer_data", {}):
+                raw = d.metadata["manufacturer_data"][1]
+                if len(raw) >= 6:
+                    temp_raw = int.from_bytes(raw[2:4], "big")
+                    humi_raw = int.from_bytes(raw[4:6], "big")
+
+                    # 補正式（例：26℃・55%に合わせた調整版）
+                    temperature = (temp_raw - 300) * 0.08
+                    humidity = humi_raw * 0.0017
+
+                    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    print(f"{now} 温度:{temperature:.1f}℃, 湿度:{humidity:.1f}%")
+
+                    # CSVに追記
+                    with open(LOG_FILE, "a", newline="") as f:
+                        writer = csv.writer(f)
+                        writer.writerow([now, f"{temperature:.1f}", f"{humidity:.1f}"])
+        await asyncio.sleep(30)  # 30秒ごとに取得
+
+asyncio.run(scan_sensor())
